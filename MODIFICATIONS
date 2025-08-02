@@ -1,0 +1,189 @@
+metrics-to-trace (list[str])
+  list of names of metric to project
+
+--------------------------------------------------------------------------------------------------------------
+
+old-projection (bool)
+  use old back-projection method that project image metrics with multi-view SAM
+
+--------------------------------------------------------------------------------------------------------------
+
+with-camera-grouping (bool/object)
+  group cameras w.r.t. their distance so that multi-view training, when applied, will only choose cameras within the same group to form a batch
+
+with-camera-grouping.regroup-interval (int)
+  number of iterations before the camera groups should be recalculated.
+   Cameras are grouped by implementing the FPS algorithm which is inherently stochastic, periodically regrouping the cameras allows nearby cameras that were previously assigned to different groups to be reassigned together, thereby providing richer geometric information.
+
+--------------------------------------------------------------------------------------------------------------
+
+visualize-adc (bool/object)
+  render images visualizing number of gaussians selected for densify/prune from random viewpoints
+
+visualize-adc.views (int)
+  views to render, defaults to 3
+
+visualize-adc.with-reference (bool)
+  also render image original output and L1/SSIM loss image for reference
+
+--------------------------------------------------------------------------------------------------------------
+
+dump-attribute-distribution (bool)
+  save opacity and size of gaussians at each densification step before densification takes place
+
+--------------------------------------------------------------------------------------------------------------
+
+dump_ADC_statistics (bool)
+  save adc statistics
+
+--------------------------------------------------------------------------------------------------------------
+
+trace.capture (bool)
+  capture traces for training predictor
+
+trace.validate-capture (bool)
+  validate while capture. this implies trace.capture
+
+trace.step-limit (float)
+  limitation on number of gaussians that can be densified on each densification step.
+   If a value less than 1 is specified, it limits the number of gaussians that may be densified each time up
+    to ((current gaussians) * step-limit).
+   If a value that is greater than 1 is specified, a scheduler is applied: a value t decreases linearly from
+    -1 to -(step-limit) along with training iterations, the number of gaussians that may be densified will be
+    limited to (2^t * (current gaussians)) on each densification step.
+   If more gaussians were proposed, pick randomly (with uniform distribution) among them.
+   Set to 0 to disable this limitation
+  
+trace.evaluate (bool)
+  evaluate accuracy of model prediction. MSE error will be written to <output-dir>/predictor-evaluation
+
+--------------------------------------------------------------------------------------------------------------
+
+foreseer.explore-with-gaussian-gradient (bool)
+  if gaussian gradient should be used in the exploring step, defaults to true
+
+foreseer.explore-with-random (float)
+  ratio of random extra gaussian should be picked in the exploring step, setting to 0 will disable this
+  defaults to 0
+
+foreseer.use-dldl (bool)
+foreseer.use-dl1 (bool)
+foreseer.use-dssim (bool)
+  if certain metric should be used during decision making, defaults to true
+
+foreseer.strict (bool)
+  strict mode: gaussian must decrease on all metrics used during decision making to be selected
+  defaults to false, which means decreasing on any metric used is sufficient for gaussian to be selected
+
+foreseer.target-gaussian (int)
+  number of gaussian to reach after all densify steps, defaults to 0 which means do not apply growth control
+  if the number of gaussian proposed to be densified at any step exceeds the budget for that step, proposed
+   gaussian will be sampled randomly weighted by their maximum decrease amongst all metrics used.
+  See also foreseer.temperature-modifier, which will alter the behavior of this modification.
+  this might be moved to global namespace since growth control is not limited to foreseer densify classifier.
+
+foreseer.visualize-views (int)
+  number of views to visualize. defaults to 0 which means visualization will be skipped.
+  Since foreseer adjusts the iteration counter from time to time, it has to implement visualization separately
+   to acquire correct result.
+
+foreseer.temperature-modifier (float)
+  each gaussian, given its reduced metric (minimum among all metrics if strict, minimum otherwise) m, the
+   temperature modifier k, index of current densify step i and total number of densify steps t, has a
+   probability p = 2 / 2 + exp(-k * (i / t) * m) of being selected as a candidate.
+  Random sampling (introduced by foreseer.target-gaussian) is applied after this random candidate selection,
+   and an uniformed (unweighted) sampling will be used instead of a weighted one.
+  If the value supplied is 0 or negative, this modification is disabled. Defaults to 0.
+
+foreseer.clustering (float)
+  use clustering to include gaussians not explored but with similar features as explored gaussians that are
+   decided to be densified into candidates
+  The value indicates maximum distance between 2 feature points such they reside in the same neighborhood when
+   clustering with DBSCAN. Distance between two feature points is defined as their euclidean distance. Each
+   dimension in the feature is rescaled into range [0, 1].
+  If 0 is specified, clustering will be disabled. Defaults to 0.
+
+foreseer.neighbor-ratio (float)
+  neighbor size ratio, setting to 0 disables this feature. Defaults to 0.
+
+--------------------------------------------------------------------------------------------------------------
+
+sam.rho (float)
+  value of rho, the only hyperparameter used in Sharpness-Aware Minimization for Efficiently Improving
+   Generalization, to use. Setting to 0 disables the use of SAM grad.
+  Defaults to 0
+
+sam.opacity-only (bool)
+  apply sam gradient to opacity only
+  Defaults to false
+
+--------------------------------------------------------------------------------------------------------------
+
+view-picker.seed (int)
+  seed used to initialize the random engine in view picker
+  if unset, use the default seed, which is the current system time as specified in Python documentation
+
+view-picker.test-ratio (float)
+  ratio of views to be used as test views, cannot be specified when test-count or train-count is specified
+  defaults to 0.125
+
+view-picker.test-count (int)
+  number of views to be used as test views, cannot be specified when test-ratio or train-count is specified
+
+view-picker.train-count (int)
+  number of views to be used as train views, cannot be specified when test-ratio or test-count is specified
+
+view-picker.llff (bool)
+  use LLFF hold to sample training and testing views
+
+--------------------------------------------------------------------------------------------------------------
+
+coad.dropout (float)
+  dropout ratio in rendering, setting to 0 will disable dropping out
+  Defaults to 0
+coad.opacity_noise (float)
+  strength of opacity noise injection in rendering, setting to 0 to disable injection
+  Defaults to 0
+
+--------------------------------------------------------------------------------------------------------------
+
+point-cloud-override (str)
+  path to alternative point cloud file (.ply) to be loaded
+
+--------------------------------------------------------------------------------------------------------------
+
+external-depth (object)
+  use external depth to supervise the rendered depth
+
+  .source ("moge" | "vggt")
+    source of external depth
+  .start-at (number)
+    start applying external depth from certain iteration. If not specified, default to the very beginning
+  .align ("none" | "mean" | "mean-variance")
+    how should the external depth be aligned to the rendered depth
+  .use-vggt-point-cloud (bool)
+    use point cloud generated by vggt
+  .plain-loss (object)
+    use external depth as an extra plain loss caused by the rendered depth
+
+    .ratio (float)
+      loss ratio
+    .softness (object)
+      use depth ranking, a softer loss
+
+      .patch-size (int)
+        patch size
+      .samples (int)
+        number of samples to take in each patch
+      .margin (float)
+        margin to limit depth ranking errors
+  
+  .statistics-loss (object)
+    calculate statistics of external and rendered depth to form extra loss
+
+    .ratio (float)
+      loss ratio
+    .patch-size (int)
+      patch size
+    .samples (int)
+      number of samples to take

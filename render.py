@@ -3,75 +3,122 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import torch
-from scene import Scene
 import os
-from tqdm import tqdm
-from os import makedirs
-from gaussian_renderer import render
-import torchvision
-from utils.general_utils import safe_state
 from argparse import ArgumentParser
-from arguments import ModelParams, PipelineParams, get_combined_args
-from gaussian_renderer import GaussianModel
-try:
-    from diff_gaussian_rasterization import SparseGaussianAdam
-    SPARSE_ADAM_AVAILABLE = True
-except:
-    SPARSE_ADAM_AVAILABLE = False
+from importlib.util import find_spec
+from os import makedirs
+
+import torch
+import torchvision
+from tqdm import tqdm
+
+from arguments import ModelParameters, PipelineParameters, get_combined_args
+from gaussian_renderer import GaussianModel, render
+from scene import Scene
+from utils.general_utils import safe_state
+from utils.modifications import prepare_parser as prepare_modifications
+
+SPARSE_ADAM_AVAILABLE = find_spec("diff_gaussian_rasterization.SparseGaussianAdam") is not None
 
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background, train_test_exp, separate_sh):
-    render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
-    gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+def render_set(
+  model_path, name, iteration, views, gaussians, pipeline, background, train_test_exp, separate_sh
+):
+  render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
+  gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
-    makedirs(render_path, exist_ok=True)
-    makedirs(gts_path, exist_ok=True)
+  makedirs(render_path, exist_ok=True)
+  makedirs(gts_path, exist_ok=True)
 
-    for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        rendering = render(view, gaussians, pipeline, background, use_trained_exp=train_test_exp, separate_sh=separate_sh)["render"]
-        gt = view.original_image[0:3, :, :]
+  for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+    rendering = render(
+      view,
+      gaussians,
+      pipeline,
+      background,
+      use_trained_exp=train_test_exp,
+      separate_sh=separate_sh,
+    )["render"]
+    gt = view.original_image[0:3, :, :]
 
-        if args.train_test_exp:
-            rendering = rendering[..., rendering.shape[-1] // 2:]
-            gt = gt[..., gt.shape[-1] // 2:]
+    if args.train_test_exp:
+      rendering = rendering[..., rendering.shape[-1] // 2 :]
+      gt = gt[..., gt.shape[-1] // 2 :]
 
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+    torchvision.utils.save_image(rendering, os.path.join(render_path, "{0:05d}".format(idx) + ".png"))
+    torchvision.utils.save_image(gt, os.path.join(gts_path, "{0:05d}".format(idx) + ".png"))
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool):
-    with torch.no_grad():
-        gaussians = GaussianModel(dataset.sh_degree)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 
-        bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+def render_sets(
+  dataset: ModelParameters,
+  iteration: int,
+  pipeline: PipelineParameters,
+  skip_train: bool,
+  skip_test: bool,
+  separate_sh: bool,
+):
+  with torch.no_grad():
+    gaussians = GaussianModel(dataset.sh_degree)
+    scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 
-        if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+    if not skip_train:
+      render_set(
+        dataset.model_path,
+        "train",
+        scene.loaded_iter,
+        scene.getTrainCameras(),
+        gaussians,
+        pipeline,
+        background,
+        dataset.train_test_exp,
+        separate_sh,
+      )
+
+    if not skip_test:
+      render_set(
+        dataset.model_path,
+        "test",
+        scene.loaded_iter,
+        scene.getTestCameras(),
+        gaussians,
+        pipeline,
+        background,
+        dataset.train_test_exp,
+        separate_sh,
+      )
+
 
 if __name__ == "__main__":
-    # Set up command line argument parser
-    parser = ArgumentParser(description="Testing script parameters")
-    model = ModelParams(parser, sentinel=True)
-    pipeline = PipelineParams(parser)
-    parser.add_argument("--iteration", default=-1, type=int)
-    parser.add_argument("--skip_train", action="store_true")
-    parser.add_argument("--skip_test", action="store_true")
-    parser.add_argument("--quiet", action="store_true")
-    args = get_combined_args(parser)
-    print("Rendering " + args.model_path)
+  # Set up command line argument parser
+  parser = ArgumentParser(description="Testing script parameters")
+  ModelParameters.install_parser(parser=parser, fill_none=True)
+  PipelineParameters.install_parser(parser=parser)
+  prepare_modifications(parser)
+  parser.add_argument("--iteration", default=-1, type=int)
+  parser.add_argument("--skip_train", action="store_true")
+  parser.add_argument("--skip_test", action="store_true")
+  parser.add_argument("--quiet", action="store_true")
+  parser.add_argument("--seed", type=int, default=0)
+  args = get_combined_args(parser)
+  print(f"Rendering {args.model_path}")
 
-    # Initialize system state (RNG)
-    safe_state(args.quiet)
+  # Initialize system state (RNG)
+  safe_state(silent=args.quiet, seed=args.seed)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, SPARSE_ADAM_AVAILABLE)
+  render_sets(
+    ModelParameters.from_parsed(parameters=args),
+    args.iteration,
+    PipelineParameters.from_parsed(parameters=args),
+    args.skip_train,
+    args.skip_test,
+    SPARSE_ADAM_AVAILABLE,
+  )

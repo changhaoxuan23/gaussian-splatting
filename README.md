@@ -139,7 +139,7 @@ python train.py -s <path to COLMAP or NeRF Synthetic dataset>
   Path where the trained model should be stored (```output/<random>``` by default).
   #### --images / -i
   Alternative subdirectory for COLMAP images (```images``` by default).
-  #### --eval
+  #### --evaluate
   Add this flag to use a MipNeRF360-style training/test split for evaluation.
   #### --resolution / -r
   Specifies resolution of the loaded images before training. If provided ```1, 2, 4``` or ```8```, uses original, 1/2, 1/4 or 1/8 resolution, respectively. For all other values, rescales the width to the given number while maintaining image aspect. **If not set and input image width exceeds 1.6K pixels, inputs are automatically rescaled to this target.**
@@ -212,9 +212,9 @@ Note that similar to MipNeRF360, we target images at resolutions in the 1-1.6K p
 The MipNeRF360 scenes are hosted by the paper authors [here](https://jonbarron.info/mipnerf360/). You can find our SfM data sets for Tanks&Temples and Deep Blending [here](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip). If you do not provide an output model directory (```-m```), trained models are written to folders with randomized unique names inside the ```output``` directory. At this point, the trained models may be viewed with the real-time viewer (see further below).
 
 ### Evaluation
-By default, the trained models use all available images in the dataset. To train them while withholding a test set for evaluation, use the ```--eval``` flag. This way, you can render training/test sets and produce error metrics as follows:
+By default, the trained models use all available images in the dataset. To train them while withholding a test set for evaluation, use the ```--evaluate``` flag. This way, you can render training/test sets and produce error metrics as follows:
 ```shell
-python train.py -s <path to COLMAP or NeRF Synthetic dataset> --eval # Train with train/test split
+python train.py -s <path to COLMAP or NeRF Synthetic dataset> --evaluate # Train with train/test split
 python render.py -m <path to trained model> # Generate renderings
 python metrics.py -m <path to trained model> # Compute error metrics on renderings
 ```
@@ -243,7 +243,7 @@ python metrics.py -m <path to pre-trained model>
   Path to the source directory containing a COLMAP or Synthetic NeRF data set.
   #### --images / -i
   Alternative subdirectory for COLMAP images (```images``` by default).
-  #### --eval
+  #### --evaluate
   Add this flag to use a MipNeRF360-style training/test split for evaluation.
   #### --resolution / -r
   Changes the resolution of the loaded images before training. If provided ```1, 2, 4``` or ```8```, uses original, 1/2, 1/4 or 1/8 resolution, respectively. For all other values, rescales the width to the given number while maintaining image aspect. ```1``` by default.

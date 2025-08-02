@@ -9,17 +9,20 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-from pathlib import Path
+import json
 import os
-from PIL import Image
+from argparse import ArgumentParser
+from pathlib import Path
+
 import torch
 import torchvision.transforms.functional as tf
-from utils.loss_utils import ssim
-from lpipsPyTorch import lpips
-import json
+from PIL import Image
 from tqdm import tqdm
+
+from lpipsPyTorch import lpips
 from utils.image_utils import psnr
-from argparse import ArgumentParser
+from utils.loss_utils import ssim
+
 
 def readImages(renders_dir, gt_dir):
     renders = []
@@ -93,11 +96,11 @@ def evaluate(model_paths):
             print("Unable to compute metrics for model", scene_dir)
 
 if __name__ == "__main__":
-    device = torch.device("cuda:0")
-    torch.cuda.set_device(device)
+  device = torch.device("cuda:0")
+  torch.cuda.set_device(device)
 
-    # Set up command line argument parser
-    parser = ArgumentParser(description="Training script parameters")
-    parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
-    args = parser.parse_args()
-    evaluate(args.model_paths)
+  # Set up command line argument parser
+  parser = ArgumentParser(description="Training script parameters")
+  parser.add_argument("--model_path", "--model-path", "-m", required=True, nargs="+", type=str, default=[])
+  args = parser.parse_args()
+  evaluate(args.model_path)

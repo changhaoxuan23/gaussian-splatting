@@ -9,62 +9,134 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-from scene.cameras import Camera
-import numpy as np
-from utils.graphics_utils import fov2focal
-from PIL import Image
+from pathlib import Path
+
 import cv2
+import numpy as np
+import torch
+from kornia import create_meshgrid
+from PIL import Image
+
+from scene.cameras import Camera
+from utils.graphics_utils import fov2focal
+from utils.modifications import modifications
 
 WARNED = False
 
 def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dataset):
-    image = Image.open(cam_info.image_path)
+  image = Image.open(cam_info.image_path)
 
-    if cam_info.depth_path != "":
-        try:
-            if is_nerf_synthetic:
-                invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / 512
-            else:
-                invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / float(2**16)
+  if cam_info.depth_path != "":
+    try:
+      if is_nerf_synthetic:
+        invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / 512
+      else:
+        invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / float(2**16)
 
-        except FileNotFoundError:
-            print(f"Error: The depth file at path '{cam_info.depth_path}' was not found.")
-            raise
-        except IOError:
-            print(f"Error: Unable to open the image file '{cam_info.depth_path}'. It may be corrupted or an unsupported format.")
-            raise
-        except Exception as e:
-            print(f"An unexpected error occurred when trying to read depth at {cam_info.depth_path}: {e}")
-            raise
+    except FileNotFoundError:
+      print(f"Error: The depth file at path '{cam_info.depth_path}' was not found.")
+      raise
+    except IOError:
+      print(
+        f"Error: Unable to open the image file '{cam_info.depth_path}'. It may be corrupted or an unsupported format."
+      )
+      raise
+    except Exception as e:
+      print(f"An unexpected error occurred when trying to read depth at {cam_info.depth_path}: {e}")
+      raise
+  else:
+    invdepthmap = None
+
+  orig_w, orig_h = image.size
+  if args.resolution in [1, 2, 4, 8]:
+    resolution = (
+      round(orig_w / (resolution_scale * args.resolution)),
+      round(orig_h / (resolution_scale * args.resolution)),
+    )
+  else:  # should be a type that converts to float
+    if args.resolution == -1:
+      if orig_w > 1600:
+        global WARNED
+        if not WARNED:
+          print(
+            "[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
+            "If this is not desired, please explicitly specify '--resolution/-r' as 1"
+          )
+          WARNED = True
+        global_down = orig_w / 1600
+      else:
+        global_down = 1
     else:
-        invdepthmap = None
-        
-    orig_w, orig_h = image.size
-    if args.resolution in [1, 2, 4, 8]:
-        resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
-    else:  # should be a type that converts to float
-        if args.resolution == -1:
-            if orig_w > 1600:
-                global WARNED
-                if not WARNED:
-                    print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
-                        "If this is not desired, please explicitly specify '--resolution/-r' as 1")
-                    WARNED = True
-                global_down = orig_w / 1600
-            else:
-                global_down = 1
-        else:
-            global_down = orig_w / args.resolution
-    
+      global_down = orig_w / args.resolution
 
-        scale = float(global_down) * float(resolution_scale)
-        resolution = (int(orig_w / scale), int(orig_h / scale))
+    scale = float(global_down) * float(resolution_scale)
+    resolution = (int(orig_w / scale), int(orig_h / scale))
 
-    return Camera(resolution, colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
-                  FoVx=cam_info.FovX, FoVy=cam_info.FovY, depth_params=cam_info.depth_params,
-                  image=image, invdepthmap=invdepthmap,
-                  image_name=cam_info.image_name, uid=id, data_device=args.data_device,
-                  train_test_exp=args.train_test_exp, is_test_dataset=is_test_dataset, is_test_view=cam_info.is_test)
+  # handle object masks
+  mask_path = Path(cam_info.image_path).parent.parent.joinpath(
+    "object_mask",
+    f"{Path(cam_info.image_path).stem}.png",
+  )
+  if mask_path.is_file():
+    masks = Image.open(mask_path)
+    masks = np.array(masks)
+  else:
+    masks = None
+
+  # handle frequency
+  if "frequency" in modifications.get("metrics-to-trace", ()):
+    frequency_path = Path(cam_info.image_path).parent.parent.joinpath(
+      "frequencies",
+      f"{Path(cam_info.image_path).stem}.pt",
+    )
+    frequency = torch.load(frequency_path) if frequency_path.is_file() else frequency_path
+  else:
+    frequency = None
+  
+  # handle dino features
+  # if "dino" in modifications.get("metrics-to-trace", ()):
+  #   dino_path = Path(cam_info.image_path).parent.parent.joinpath(
+  #     "dino_features",
+  #     f"{Path(cam_info.image_path).stem}.pt",
+  #   )
+  #   dino_feature = torch.load(dino_path) if dino_path.is_file() else dino_path
+  # else:
+  #   dino_feature = None
+  dino_feature = None
+  
+  # # handle resnet features
+  # if "resnet" in modifications.get("metrics-to-trace", ()):
+  #   resnet_path = Path(cam_info.image_path).parent.parent.joinpath(
+  #     "resnet_features",
+  #     f"{Path(cam_info.image_path).stem}.pt",
+  #   )
+  #   resnet_feature = torch.load(resnet_path) if resnet_path.is_file() else resnet_path
+  # else:
+  #   resnet_feature = None
+  resnet_feature = None
+
+
+  return Camera(
+    resolution,
+    colmap_id=cam_info.uid,
+    R=cam_info.R,
+    T=cam_info.T,
+    FoVx=cam_info.FovX,
+    FoVy=cam_info.FovY,
+    depth_params=cam_info.depth_params,
+    image=image,
+    invdepthmap=invdepthmap,
+    image_name=cam_info.image_name,
+    uid=id,
+    data_device=args.data_device,
+    train_test_exp=args.train_test_exp,
+    is_test_dataset=is_test_dataset,
+    is_test_view=cam_info.is_test,
+    masks=masks,
+    frequency=frequency,
+    dino_feature=dino_feature,
+    resnet_feature=resnet_feature,
+  )
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_nerf_synthetic, is_test_dataset):
     camera_list = []
@@ -95,3 +167,36 @@ def camera_to_JSON(id, camera : Camera):
         'fx' : fov2focal(camera.FovX, camera.width)
     }
     return camera_entry
+
+
+def pix2ndc(v, S):
+  return (v * 2.0 + 1.0) / S - 1.0
+
+
+def set_rays_od(cams):
+  for id, cam in enumerate(cams):
+    rayd = 1
+    if rayd is not None:
+      projectinverse = cam.projection_matrix.T.inverse()
+      camera2wold = cam.world_view_transform.T.inverse()
+      pixgrid = create_meshgrid(
+        cam.image_height, cam.image_width, normalized_coordinates=False, device="cpu"
+      )[0]
+      pixgrid = pixgrid.cuda()  # H,W,
+      xindx = pixgrid[:, :, 0]  # x
+      yindx = pixgrid[:, :, 1]  # y
+      ndcy, ndcx = pix2ndc(yindx, cam.image_height), pix2ndc(xindx, cam.image_width)
+      ndcx = ndcx.unsqueeze(-1)
+      ndcy = ndcy.unsqueeze(-1)  # * (-1.0)
+      ndccamera = torch.cat((ndcx, ndcy, torch.ones_like(ndcy) * (1.0), torch.ones_like(ndcy)), 2)  # N,4
+      projected = ndccamera @ projectinverse.T
+      diretioninlocal = projected / projected[:, :, 3:]  # v
+      direction = diretioninlocal[:, :, :3] @ camera2wold[:3, :3].T
+      # rays_d = torch.nn.functional.normalize(direction, p=2.0, dim=-1)
+      rays_d = direction
+      rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
+      cam.rayo = cam.camera_center.expand(rays_d.shape).permute(2, 0, 1).unsqueeze(0).cpu()
+      cam.rayd = rays_d.permute(2, 0, 1).unsqueeze(0).cpu()
+    else:
+      cam.rayo = None
+      cam.rayd = None

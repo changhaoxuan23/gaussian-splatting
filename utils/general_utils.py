@@ -109,25 +109,26 @@ def build_scaling_rotation(s, r):
     L = R @ L
     return L
 
-def safe_state(silent):
-    old_f = sys.stdout
-    class F:
-        def __init__(self, silent):
-            self.silent = silent
+def safe_state(*, silent: bool, seed: int):
+  old_f = sys.stdout
 
-        def write(self, x):
-            if not self.silent:
-                if x.endswith("\n"):
-                    old_f.write(x.replace("\n", " [{}]\n".format(str(datetime.now().strftime("%d/%m %H:%M:%S")))))
-                else:
-                    old_f.write(x)
+  class F:
+    def __init__(self, silent):
+      self.silent = silent
 
-        def flush(self):
-            old_f.flush()
+    def write(self, x):
+      if not self.silent:
+        if x.endswith("\n"):
+          old_f.write(x.replace("\n", " [{}]\n".format(str(datetime.now().strftime("%d/%m %H:%M:%S")))))
+        else:
+          old_f.write(x)
 
-    sys.stdout = F(silent)
+    def flush(self):
+      old_f.flush()
 
-    random.seed(0)
-    np.random.seed(0)
-    torch.manual_seed(0)
-    torch.cuda.set_device(torch.device("cuda:0"))
+  sys.stdout = F(silent)
+
+  random.seed(seed)
+  np.random.seed(seed)
+  torch.manual_seed(seed)
+  torch.cuda.set_device(torch.device("cuda:0"))
